@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Splitter & Merger</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .drag-active { border-color: #3b82f6; background-color: #eff6ff; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; }
+        
+        /* Custom scrollbar for chunk lists */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col items-center py-10 px-4">
+
+    <div class="max-w-3xl w-full bg-white rounded-2xl shadow-xl overflow-hidden">
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white text-center">
+            <h1 class="text-3xl font-bold mb-2">ChunkMaster</h1>
+            <p class="text-blue-100 text-sm">Split large files into manageable chunks and merge them back securely in your browser.</p>
+        </div>
+
+        <div class="flex border-b border-gray-200">
+            <button id="tab-split" class="flex-1 py-4 text-center font-medium tab-active transition-colors hover:bg-gray-50" onclick="switchTab('split')">
+                Split File
+            </button>
+            <button id="tab-merge" class="flex-1 py-4 text-center font-medium text-gray-500 transition-colors hover:bg-gray-50" onclick="switchTab('merge')">
+                Merge Chunks
+            </button>
+        </div>
+
+        <div class="p-6 md:p-8">
+            
+            <div id="section-split" class="block space-y-6">
+                <!-- Dropzone -->
+                <div id="split-dropzone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50 relative">
+                    <input type="file" id="split-input" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="handleFileSelect(event)">
+                    <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                    <p class="text-gray-600 font-medium">Click or drag a large file here to split</p>
+                    <p id="split-file-name" class="text-sm text-gray-400 mt-1">No file selected</p>
+                </div>
+
+                <!-- Settings -->
+                <div class="flex flex-col md:flex-row gap-4 items-end">
+                    <div class="flex-1 w-full">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Chunk Size</label>
+                        <select id="chunk-size-select" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" onchange="toggleCustomSize()">
+                            <option value="1048576">1 MB</option>
+                            <option value="5242880" selected>5 MB</option>
+                            <option value="10485760">10 MB</option>
+                            <option value="52428800">50 MB</option>
+                            <option value="custom">Custom (MB)</option>
+                        </select>
+                    </div>
+                    <div id="custom-size-container" class="flex-1 w-full hidden">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Custom Size (MB)</label>
+                        <input type="number" id="custom-chunk-size" class="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:outline-none" min="1" placeholder="e.g., 25">
+                    </div>
+                    <button id="btn-split" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled onclick="processSplit()">
+                        Split File
+                    </button>
+                </div>
+
+                <!-- Results -->
+                <div id="split-results-container" class="hidden">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="text-lg font-semibold text-gray-800">Generated Chunks</h3>
+                        <button onclick="downloadAllChunks()" class="text-sm bg-gray-800 hover:bg-gray-900 text-white py-1 px-3 rounded shadow-sm transition-colors">
+                            Download All
+                        </button>
+                    </div>
+                    <div id="split-results" class="bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-60 overflow-y-auto custom-scroll space-y-2">
+                        <!-- Chunks injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="section-merge" class="hidden space-y-6">
+                <!-- Dropzone -->
+                <div id="merge-dropzone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center transition-colors cursor-pointer hover:border-indigo-400 hover:bg-indigo-50 relative">
+                    <input type="file" id="merge-input" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onchange="handleMergeFilesSelect(event)">
+                    <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <p class="text-gray-600 font-medium">Click or drag chunk files (.part001, .part002) here</p>
+                    <p id="merge-file-count" class="text-sm text-gray-400 mt-1">0 files selected</p>
+                </div>
+
+                <div class="flex justify-between items-center">
+                    <p class="text-sm text-gray-500" id="merge-status">Please select files to merge.</p>
+                    <button id="btn-merge" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled onclick="processMerge()">
+                        Merge & Download
+                    </button>
+                </div>
+
+                <!-- Selected Files List -->
+                <div id="merge-list-container" class="hidden">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-2">Detected Order:</h3>
+                    <div id="merge-list" class="bg-gray-50 border border-gray-200 rounded-lg p-2 max-h-60 overflow-y-auto custom-scroll space-y-1">
+                        <!-- Merge files injected here -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- State Variables ---
+        let selectedFileToSplit = null;
+        let generatedChunks = [];
+        let selectedFilesToMerge = [];
+
+        // --- UI Interactions ---
+        function switchTab(tab) {
+            const splitTab = document.getElementById('tab-split');
+            const mergeTab = document.getElementById('tab-merge');
+            const splitSec = document.getElementById('section-split');
+            const mergeSec = document.getElementById('section-merge');
+
+            if (tab === 'split') {
+                splitTab.classList.add('tab-active', 'text-blue-600');
+                splitTab.classList.remove('text-gray-500');
+                mergeTab.classList.remove('tab-active', 'text-blue-600');
+                mergeTab.classList.add('text-gray-500');
+                
+                splitSec.classList.remove('hidden');
+                mergeSec.classList.add('hidden');
+            } else {
+                mergeTab.classList.add('tab-active', 'text-blue-600');
+                mergeTab.classList.remove('text-gray-500');
+                splitTab.classList.remove('tab-active', 'text-blue-600');
+                splitTab.classList.add('text-gray-500');
+                
+                mergeSec.classList.remove('hidden');
+                splitSec.classList.add('hidden');
+            }
+        }
+
+        function toggleCustomSize() {
+            const select = document.getElementById('chunk-size-select');
+            const customContainer = document.getElementById('custom-size-container');
+            if (select.value === 'custom') {
+                customContainer.classList.remove('hidden');
+            } else {
+                customContainer.classList.add('hidden');
+            }
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFileToSplit = file;
+                document.getElementById('split-file-name').textContent = `${file.name} (${formatBytes(file.size)})`;
+                document.getElementById('btn-split').disabled = false;
+                
+                // Reset results
+                document.getElementById('split-results-container').classList.add('hidden');
+                generatedChunks = [];
+            }
+        }
+
+        function processSplit() {
+            if (!selectedFileToSplit) return;
+
+            const selectValue = document.getElementById('chunk-size-select').value;
+            let chunkSize = 0;
+
+            if (selectValue === 'custom') {
+                const customMb = parseFloat(document.getElementById('custom-chunk-size').value);
+                if (isNaN(customMb) || customMb <= 0) {
+                    alert('Please enter a valid custom chunk size in MB.');
+                    return;
+                }
+                chunkSize = customMb * 1024 * 1024;
+            } else {
+                chunkSize = parseInt(selectValue, 10);
+            }
+
+            const file = selectedFileToSplit;
+            const totalChunks = Math.ceil(file.size / chunkSize);
+            generatedChunks = [];
+
+            // Perform the slicing (Blob.slice is virtually instantaneous as it creates pointers)
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize, file.size);
+                const chunkBlob = file.slice(start, end);
+                
+                // Naming convention: originalName.part001, part002...
+                const partNumber = String(i + 1).padStart(3, '0');
+                const chunkName = `${file.name}.part${partNumber}`;
+                
+                generatedChunks.push({
+                    name: chunkName,
+                    blob: chunkBlob,
+                    size: chunkBlob.size
+                });
+            }
+
+            renderChunksUI();
+        }
+
+        function renderChunksUI() {
+            const container = document.getElementById('split-results-container');
+            const list = document.getElementById('split-results');
+            list.innerHTML = '';
+
+            generatedChunks.forEach((chunk, index) => {
+                const item = document.createElement('div');
+                item.className = 'flex justify-between items-center bg-white p-3 rounded border border-gray-100 shadow-sm';
+                
+                // Object URL for downloading
+                const url = URL.createObjectURL(chunk.blob);
+                
+                item.innerHTML = `
+                    <div class="flex items-center space-x-3 overflow-hidden">
+                        <span class="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">Part ${index + 1}</span>
+                        <span class="text-sm font-medium text-gray-700 truncate" title="${chunk.name}">${chunk.name}</span>
+                        <span class="text-xs text-gray-400">(${formatBytes(chunk.size)})</span>
+                    </div>
+                    <a href="${url}" download="${chunk.name}" class="text-blue-600 hover:text-blue-800 p-2" title="Download this chunk">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    </a>
+                `;
+                list.appendChild(item);
+            });
+
+            container.classList.remove('hidden');
+        }
+
+        async function downloadAllChunks() {
+            if (generatedChunks.length === 0) return;
+            
+            // Note: Browsers may block multiple rapid downloads. 
+            // We use a delay to mitigate popup blocking.
+            for (let i = 0; i < generatedChunks.length; i++) {
+                const chunk = generatedChunks[i];
+                const url = URL.createObjectURL(chunk.blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = chunk.name;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                // Small delay between downloads
+                await new Promise(resolve => setTimeout(resolve, 400));
+            }
+        }
+
+        function handleMergeFilesSelect(event) {
+            const files = Array.from(event.target.files);
+            if (files.length > 0) {
+                // Sort files based on the .partXXX extension
+                files.sort((a, b) => {
+                    const getPartNum = (name) => {
+                        const match = name.match(/\.part(\d+)$/i);
+                        return match ? parseInt(match[1], 10) : 0;
+                    };
+                    return getPartNum(a.name) - getPartNum(b.name);
+                });
+
+                selectedFilesToMerge = files;
+                document.getElementById('merge-file-count').textContent = `${files.length} chunk(s) selected`;
+                document.getElementById('btn-merge').disabled = false;
+                
+                // Calculate total size
+                const totalSize = files.reduce((acc, f) => acc + f.size, 0);
+                document.getElementById('merge-status').innerHTML = `Ready to merge <b>${files.length}</b> parts (${formatBytes(totalSize)})`;
+
+                renderMergeListUI();
+            }
+        }
+
+        function renderMergeListUI() {
+            const container = document.getElementById('merge-list-container');
+            const list = document.getElementById('merge-list');
+            list.innerHTML = '';
+
+            selectedFilesToMerge.forEach((file, index) => {
+                const item = document.createElement('div');
+                item.className = 'text-sm text-gray-600 flex justify-between bg-white px-3 py-2 rounded border border-gray-100';
+                item.innerHTML = `
+                    <span class="truncate pr-4">${file.name}</span>
+                    <span class="text-xs text-gray-400 whitespace-nowrap">${formatBytes(file.size)}</span>
+                `;
+                list.appendChild(item);
+            });
+
+            container.classList.remove('hidden');
+        }
+
+        function processMerge() {
+            if (selectedFilesToMerge.length === 0) return;
+
+            // Extract original filename by removing the .partXXX from the first file
+            const firstFileName = selectedFilesToMerge[0].name;
+            const originalName = firstFileName.replace(/\.part\d+$/i, '') || 'merged_file.out';
+
+            // Create a single blob containing all the selected files
+            // Blob constructor handles the arrays of blobs efficiently without loading everything into memory simultaneously.
+            const mergedBlob = new Blob(selectedFilesToMerge);
+            
+            // Trigger download
+            const url = URL.createObjectURL(mergedBlob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = originalName;
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                document.getElementById('merge-status').innerHTML = `<span class="text-green-600 font-medium">Successfully merged and download started!</span>`;
+            }, 100);
+        }
+
+        // --- Drag and Drop Polish ---
+        ['split-dropzone', 'merge-dropzone'].forEach(id => {
+            const zone = document.getElementById(id);
+            const input = zone.querySelector('input');
+            
+            zone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                zone.classList.add('drag-active');
+            });
+            
+            zone.addEventListener('dragleave', () => {
+                zone.classList.remove('drag-active');
+            });
+            
+            zone.addEventListener('drop', () => {
+                zone.classList.remove('drag-active');
+            });
+        });
+
+    </script>
+</body>
+</html>
