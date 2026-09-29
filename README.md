@@ -6,5 +6,8 @@ ChunkMaster - file splitter and merge<br>
 Split large files into manageable chunks and merge them back securely in your browser.<br>
 <br>
 For online version, use chunk_master.html<br>
+<br>
 For offline version, use file-splitter.html<br>
+<br>
+For VBscript, use fmerge.vbs and fsplit.vbs<br>
 <br>
